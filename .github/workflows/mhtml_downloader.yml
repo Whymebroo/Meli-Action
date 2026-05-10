@@ -138,7 +138,7 @@ on:
         description: 'Folder to store downloads (relative to repo root)'
         required: false
         type: string
-        default: 'downloads'
+        default: 'tiktoks'
 
       extra_args:
         description: 'Extra yt-dlp arguments (advanced users)'
