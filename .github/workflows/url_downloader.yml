@@ -1,152 +1,82 @@
-name: "دانلودر لینک مستقیم"
+name: استخراج لینک ویدیوهای تیک‌تاک
 
 on:
   workflow_dispatch:
     inputs:
-      file_url:
-        description: "Direct File URL"
+      tiktok_username:
+        description: 'اسم پیج تیک‌تاک (مثل: @cristiano)'
         required: true
         type: string
-
-      zip_password:
-        description: "Password for archive (leave empty for no password)"
+      
+      video_count:
+        description: 'تعداد ویدیوهای آخر برای گرفتن لینک'
         required: false
-        default: ""
-        type: string
-
-      max_part_mb:
-        description: "Maximum size per part (MB)"
-        required: false
-        default: "90"
-        type: string
-
-      upload_method:
-        description: "Upload Method"
-        required: true
-        default: "repository"
-        type: choice
-        options:
-          - repository
-          - release
-
-      release_tag:
-        description: "Release Tag"
-        required: false
-        default: ""
-        type: string
+        type: number
+        default: 10
 
 permissions:
   contents: write
 
 jobs:
-  direct-download:
+  extract-links:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout Repository
+      - name: Clone repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Dependencies
+      - name: Install yt-dlp
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y p7zip-full curl
+          pip install -q -U yt-dlp
 
-      - name: Download File
-        id: download
-        shell: bash
+      - name: Extract TikTok video links
         run: |
-          mkdir -p temp_dl
+          USERNAME="${{ github.event.inputs.tiktok_username }}"
+          COUNT="${{ github.event.inputs.video_count }}"
+          
+          # حذف @ از اول اسم اگه باشه
+          USERNAME_CLEAN=$(echo "$USERNAME" | sed 's/^@//')
+          
+          # ساخت پوشه به اسم کاربر
+          OUTPUT_DIR="tiktok_links/${USERNAME_CLEAN}"
+          mkdir -p "$OUTPUT_DIR"
+          
+          # ساخت لینک کامل پروفایل
+          PROFILE_URL="https://www.tiktok.com/@${USERNAME_CLEAN}"
+          
+          echo "در حال گرفتن لینک ویدیوهای ${USERNAME_CLEAN}..."
+          
+          # استخراج لینک ویدیوها با yt-dlp
+          yt-dlp \
+            --flat-playlist \
+            --print "%(webpage_url)s" \
+            --playlist-end "${COUNT}" \
+            "$PROFILE_URL" > "${OUTPUT_DIR}/links.txt"
+          
+          # نمایش تعداد لینک‌های گرفته شده
+          LINK_COUNT=$(wc -l < "${OUTPUT_DIR}/links.txt")
+          echo "✅ ${LINK_COUNT} لینک ویدیو استخراج شد"
+          
+          # اضافه کردن هدر به فایل
+          sed -i "1i# لینک‌های ویدیوهای پیج ${USERNAME_CLEAN}\n# تعداد: ${LINK_COUNT}\n# تاریخ: $(date)\n" "${OUTPUT_DIR}/links.txt"
+          
+          echo "📁 فایل در مسیر ${OUTPUT_DIR}/links.txt ذخیره شد"
 
-          FILE_URL="${{ github.event.inputs.file_url }}"
-
-          FILENAME=$(basename "$FILE_URL" | cut -d'?' -f1)
-          FILENAME=$(echo "$FILENAME" | sed 's/[^a-zA-Z0-9._() -]/_/g')
-
-          echo "Downloading: $FILENAME"
-
-          curl -L --fail --retry 3 \
-            -o "temp_dl/$FILENAME" \
-            "$FILE_URL"
-
-          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
-          echo "filepath=temp_dl/$FILENAME" >> "$GITHUB_OUTPUT"
-
-      - name: Create Split Archive
-        id: archive
-        shell: bash
+      - name: Show extracted links
         run: |
-          FILEPATH="${{ steps.download.outputs.filepath }}"
-          PASS="${{ github.event.inputs.zip_password }}"
-          THRESH_MB="${{ github.event.inputs.max_part_mb }}"
+          USERNAME_CLEAN=$(echo "${{ github.event.inputs.tiktok_username }}" | sed 's/^@//')
+          echo "محتوای فایل:"
+          cat "tiktok_links/${USERNAME_CLEAN}/links.txt"
 
-          if [[ -z "$THRESH_MB" || "$THRESH_MB" -le 0 || "$THRESH_MB" -gt 1900 ]]; then
-            THRESH_MB=1800
-          fi
-
-          BASENAME=$(basename "$FILEPATH")
-
-          cd temp_dl || exit 1
-
-          ARCHIVE_BASE="${BASENAME%.*}_$(date +%Y%m%d_%H%M%S)"
-
-          if [ -n "$PASS" ]; then
-            7z a -p"$PASS" -mhe=on -mx=3 -v${THRESH_MB}m "${ARCHIVE_BASE}.7z" "$BASENAME"
-          else
-            7z a -mx=3 -v${THRESH_MB}m "${ARCHIVE_BASE}.7z" "$BASENAME"
-          fi
-
-          if [ -f "${ARCHIVE_BASE}.7z.001" ] && [ ! -f "${ARCHIVE_BASE}.7z.002" ]; then
-            mv "${ARCHIVE_BASE}.7z.001" "${ARCHIVE_BASE}.7z"
-          fi
-
-          echo "archive_name=${ARCHIVE_BASE}.7z" >> "$GITHUB_OUTPUT"
-
-          cd ..
-
-      - name: Get Current Date
-        id: get_date
-        shell: bash
+      - name: Push to repository
         run: |
-          echo "date=$(date '+%Y-%m-%d %H:%M:%S')" >> "$GITHUB_OUTPUT"
-
-      - name: Push to Repository
-        if: github.event.inputs.upload_method == 'repository'
-        shell: bash
-        run: |
+          USERNAME_CLEAN=$(echo "${{ github.event.inputs.tiktok_username }}" | sed 's/^@//')
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          mkdir -p downloads
-
-          mv temp_dl/* downloads/ 2>/dev/null || true
-
-          git add downloads/
-
-          git commit -m "Direct Download: ${{ steps.download.outputs.filename }} [skip ci]" || echo "Nothing to commit"
-
+          git add "tiktok_links/"
+          git commit -m "Add TikTok links for ${USERNAME_CLEAN} [skip ci]" || echo "Nothing to commit"
           git push
-
-      - name: Upload to GitHub Releases
-        if: github.event.inputs.upload_method == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.release_tag != '' && github.event.inputs.release_tag || format('direct-{0}', github.run_number) }}
-          name: Direct Download Release
-          body: |
-            Direct download completed.
-
-            File: ${{ steps.download.outputs.filename }}
-            Date: ${{ steps.get_date.outputs.date }}
-          files: temp_dl/*
-
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cleanup
-        if: always()
-        shell: bash
-        run: |
-          rm -rf temp_dl
