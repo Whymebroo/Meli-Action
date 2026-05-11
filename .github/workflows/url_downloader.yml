@@ -41,8 +41,8 @@ jobs:
           # حذف @ از اول اسم اگه باشه
           USERNAME_CLEAN=$(echo "$USERNAME" | sed 's/^@//')
           
-          # ساخت پوشه به اسم کاربر
-          OUTPUT_DIR="tiktok_links/${USERNAME_CLEAN}"
+          # ساخت پوشه links (اگه وجود نداشته باشه)
+          OUTPUT_DIR="links"
           mkdir -p "$OUTPUT_DIR"
           
           # ساخت لینک کامل پروفایل
@@ -55,28 +55,28 @@ jobs:
             --flat-playlist \
             --print "%(webpage_url)s" \
             --playlist-end "${COUNT}" \
-            "$PROFILE_URL" > "${OUTPUT_DIR}/links.txt"
+            "$PROFILE_URL" > "${OUTPUT_DIR}/${USERNAME_CLEAN}.txt"
           
           # نمایش تعداد لینک‌های گرفته شده
-          LINK_COUNT=$(wc -l < "${OUTPUT_DIR}/links.txt")
+          LINK_COUNT=$(wc -l < "${OUTPUT_DIR}/${USERNAME_CLEAN}.txt")
           echo "✅ ${LINK_COUNT} لینک ویدیو استخراج شد"
           
           # اضافه کردن هدر به فایل
-          sed -i "1i# لینک‌های ویدیوهای پیج ${USERNAME_CLEAN}\n# تعداد: ${LINK_COUNT}\n# تاریخ: $(date)\n" "${OUTPUT_DIR}/links.txt"
+          sed -i "1i# لینک‌های ویدیوهای پیج ${USERNAME_CLEAN}\n# تعداد: ${LINK_COUNT}\n# تاریخ: $(date)\n" "${OUTPUT_DIR}/${USERNAME_CLEAN}.txt"
           
-          echo "📁 فایل در مسیر ${OUTPUT_DIR}/links.txt ذخیره شد"
+          echo "📁 فایل در مسیر ${OUTPUT_DIR}/${USERNAME_CLEAN}.txt ذخیره شد"
 
       - name: Show extracted links
         run: |
           USERNAME_CLEAN=$(echo "${{ github.event.inputs.tiktok_username }}" | sed 's/^@//')
           echo "محتوای فایل:"
-          cat "tiktok_links/${USERNAME_CLEAN}/links.txt"
+          cat "links/${USERNAME_CLEAN}.txt"
 
       - name: Push to repository
         run: |
           USERNAME_CLEAN=$(echo "${{ github.event.inputs.tiktok_username }}" | sed 's/^@//')
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "tiktok_links/"
+          git add "links/"
           git commit -m "Add TikTok links for ${USERNAME_CLEAN} [skip ci]" || echo "Nothing to commit"
           git push
